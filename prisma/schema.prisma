@@ -1,0 +1,99 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  // Sin binarios de motor: compilador de consultas en TS + adaptador SQLite.
+  // Más ligero en producción (Docker) y evita descargas de binaries.prisma.sh.
+  previewFeatures = ["queryCompiler", "driverAdapters"]
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// ============ AirBridge: modelos propios ============
+
+// Conexión de la tienda con Airtable (token + base + tabla elegidas)
+model AirtableConnection {
+  id         String   @id @default(cuid())
+  shop       String   @unique
+  // Token personal de Airtable del comerciante (cifrado en app-layer)
+  token      String
+  baseId     String?
+  tableId    String?
+  tableName  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  syncConfig SyncConfig?
+}
+
+// Configuración de una sincronización: qué se sincroniza y cómo se mapean los campos
+model SyncConfig {
+  id            String   @id @default(cuid())
+  shop          String   @unique
+  connectionId  String   @unique
+  connection    AirtableConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  resource      String   @default("products") // products | orders | customers (MVP: products)
+  direction     String   @default("both")     // shopify_to_airtable | airtable_to_shopify | both
+  // Mapeo de campos en JSON: [{shopifyField, airtableField, transform?}]
+  fieldMapJson  String   @default("[]")
+  enabled       Boolean  @default(false)
+  lastFullSync  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Espejo: relaciona cada entidad de Shopify con su registro de Airtable
+// y guarda un hash del último estado sincronizado (anti-bucle y detección de conflictos)
+model SyncRecord {
+  id               String   @id @default(cuid())
+  shop             String
+  resource         String   // products, ...
+  shopifyId        String   // gid de Shopify
+  airtableRecordId String
+  lastSyncedHash   String   // hash del contenido en el último sync OK
+  updatedAt        DateTime @updatedAt
+
+  @@unique([shop, resource, shopifyId])
+  @@index([shop, airtableRecordId])
+}
+
+// Registro de actividad: qué se sincronizó, cuándo y si falló (transparencia = confianza = reseñas)
+model SyncLog {
+  id        String   @id @default(cuid())
+  shop      String
+  direction String   // s2a | a2s
+  resource  String
+  entityId  String
+  action    String   // create | update | delete | skip | conflict
+  ok        Boolean  @default(true)
+  message   String?
+  createdAt DateTime @default(now())
+
+  @@index([shop, createdAt])
+}
