@@ -3,7 +3,6 @@ FROM node:22-alpine
 
 RUN apk add --no-cache openssl
 ENV NODE_ENV=production
-# Prisma en modo sin binarios de motor (usamos adaptador libsql/Turso)
 ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
 
 WORKDIR /app
@@ -17,8 +16,9 @@ RUN npm remove @shopify/cli || true
 # Código
 COPY . .
 
-# Cliente Prisma (sin motor nativo) + build de la app
-RUN npx prisma generate --no-engine || true
+# Prisma Client must be generated with its runtime engine when using
+# the libSQL driver adapter. Using --no-engine causes startup to fail.
+RUN npx prisma generate
 RUN npm run build
 
 EXPOSE 3000
